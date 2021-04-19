@@ -60,11 +60,10 @@ function [landmarks, poses, transitions, observations] = loadG2o(filepath)
 	i_edge_bearing_se2_xy=0;
 	i_edge_range_se2_xy=0;
 
-	poses = struct()
-	landmarks = struct()
-	transitions = struct()
-	observations = struct()
-	%
+	poses = struct();
+	landmarks = struct();
+	transitions = struct();
+	observations = struct();
 	curr_id = -1;
 
 	while true
@@ -126,11 +125,11 @@ function [landmarks, poses, transitions, observations] = loadG2o(filepath)
 		end
 	end
 
-  printf('[G2oWrapper] loading file...\n#landmarks: %d \n#poses: %d \n',i_vert_xy, i_vert_se2);
-  printf('#transitions: %d \n#observation(bearing-only): %d \n',i_edge_se2, i_edge_bearing_se2_xy);
-  printf('#observation(point): %d \n#laser-scan: %d \n',i_edge_se2_xy, i_robotlaser);
-  printf('#observation(range): %d \n',i_edge_range_se2_xy);
-  fflush(stdout);
+  % printf('[G2oWrapper] loading file...\n#landmarks: %d \n#poses: %d \n',i_vert_xy, i_vert_se2);
+  % printf('#transitions: %d \n#observation(bearing-only): %d \n',i_edge_se2, i_edge_bearing_se2_xy);
+  % printf('#observation(point): %d \n#laser-scan: %d \n',i_edge_se2_xy, i_robotlaser);
+  % printf('#observation(range): %d \n',i_edge_range_se2_xy);
+  % fflush(stdout);
 
 end
 
