@@ -8,15 +8,15 @@ function [landmarks] = initLandmarks(poses, observations)
     land_id_mapping = [];
     % counting the found landmarks, just for convenience
     uniq_landmarks_found = 0;
-    % poses(i) is mapped to id 1099 + i
-    % in particular, we can obtain pose = poses(pose_id - poses_id_offset);
-    poses_id_offset = 1099;
 
     % fill landmarks_info with each landmark's observations
     for i=1:length(observations)
-        curr_pose_id = observations(i).pose_id;
-        curr_x = poses(curr_pose_id - poses_id_offset).x;
-        curr_y = poses(curr_pose_id - poses_id_offset).y;
+        curr_pose = searchById(poses, observations(i).pose_id);
+        if isnumeric(curr_pose)  % pose of current observation set doesn't exist
+            continue
+        endif
+        curr_x = curr_pose.x;
+        curr_y = curr_pose.y;
         for j=1:length(observations(i).observation)
             land_id = observations(i).observation(j).id;
             range_obs = observations(i).observation(j).range;
@@ -44,7 +44,7 @@ function [landmarks] = initLandmarks(poses, observations)
     endfor
 
     % remove first empty and meaningless field of the struct
-    landmarks = landmarks(2:end);
+    landmarks(1) = [];
 
 end
 

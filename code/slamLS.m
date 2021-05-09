@@ -56,8 +56,8 @@ function [poses_ls, landmarks_ls] = slamLS(landmarks, pose0, transitions, observ
     endfor
 
     % remove first, empty and meaningless, cell of struct
-    poses_ls = poses_ls(2:end);
-    landmarks_ls = landmarks_ls(2:end);
+    poses_ls(1) = [];
+    landmarks_ls(1) = [];
 
 end
 
