@@ -6,6 +6,9 @@ addpath 'g2o_wrapper'
 addpath 'visualization'
 source 'mse.m'
 
+% To disable singularity warnings (couldn't find a way to disable just that kind of warnings)
+%warning("off", "all")
+
 %%% load datasets
 % initial guess
 [~, poses, transitions, observations] = loadG2o('../datasets/slam2d_range_only_initial_guess.g2o');
