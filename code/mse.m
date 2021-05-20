@@ -1,31 +1,38 @@
 addpath 'g2o_wrapper'
 
-function mse = mse_land(lands_ground, lands_guess)
+function mse = mse_land(XL_guess, landmarks_ig, landmarks_gt)
+	global LAND_NUM;
 	mse = 0;
-	n_lands = length(lands_guess);
 
-	for i=1:n_lands
-		id_guess = lands_guess(i).id;
-		land_gt = searchById(lands_ground, id_guess);
+	for i=1:LAND_NUM
+		id_guess = landmarks_ig(i).id;
+		land_gt = searchById(landmarks_gt, id_guess);
+		if isnumeric(land_gt)
+			disp("Error: landmark is present in landmarks_ig but not in landmarks_gt");
+			return
+		endif
 		mse += norm([
-			lands_guess(i).x_pose - land_gt.x_pose;
-			lands_guess(i).y_pose - land_gt.y_pose
+			XL_guess(:, i)(1) - land_gt.x_pose;
+			XL_guess(:, i)(2) - land_gt.y_pose
 		]);
 	end
-	mse /= n_lands;
+	mse /= LAND_NUM;
 end
 
-function mse = mse_pose(poses_ground, poses_guess)
+function mse = mse_pose(XR_guess, poses_ig, poses_gt)
+	global POSE_NUM;
 	mse = 0;
-	n_poses = length(poses_guess);
 
-	for i=1:n_poses
-		id_guess = poses_guess(i).id;
-		pose_gt = searchById(poses_ground, id_guess);
+	for i=1:POSE_NUM
+		id_guess = poses_ig(i).id;
+		pose_gt = searchById(poses_gt, id_guess);
+		if isnumeric(pose_gt)
+			disp("Error: pose is present in poses_ig but not in poses_gt");
+		endif
 		mse += norm([
-			poses_guess(i).x - pose_gt.x;
-			poses_guess(i).y - pose_gt.y
+			XR_guess(:, :, i)(1, 3) - pose_gt.x;
+			XR_guess(:, :, i)(2, 3) - pose_gt.y
 		]);
 	end
-	mse /= n_poses;
+	mse /= POSE_NUM;
 end

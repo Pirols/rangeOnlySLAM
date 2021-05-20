@@ -79,7 +79,6 @@ function [x, y] = trilaterateLandmark(observations)
     b = zeros(n-1, 1);
 
     for i=1:n-1
-        % Therefore, we need xn, yn and rn
         xi = observations(i, 1);
         yi = observations(i, 2);
         ri = observations(i, 3);
@@ -98,7 +97,6 @@ function [x, y] = trilaterateLandmark(observations)
     residue = 0;
 
     for i=1:n
-        % Therefore, we need xn, yn and rn
         xi = observations(i, 1);
         yi = observations(i, 2);
         ri = observations(i, 3);

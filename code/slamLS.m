@@ -1,149 +1,151 @@
-function [poses_ls, landmarks_ls, chi_stats, num_inliers] = slamLS(landmarks_ig,
-                poses_ig, observations, n_iterations, damping, kernel_threshold)
+function [XR_ls, XL_ls, chi_stats, num_inliers] = slamLS(XR_ig, XL_ig, Z,
+                 associations, num_iterations, damping, kernel_threshold)
+
+    % retrieve cardinalities
+    global POSE_DIM;
+    global LAND_DIM;
+    global POSE_NUM;
+    global LAND_NUM;
+    SYSTEM_SIZE = POSE_DIM*POSE_NUM + LAND_DIM*LAND_NUM;
 
     % initialize outputs
-    poses_ls = struct();
-    landmarks_ls = struct();
-    chi_stats = zeros(1, n_iterations);
-    num_inliers = zeros(1, n_iterations);
+    chi_stats = zeros(1, num_iterations);
+    num_inliers = zeros(1, num_iterations);
+    XR_ls = XR_ig;
+    XL_ls = XL_ig;
 
-    % no poses provided
-    n_poses = length(poses_ig);
-    if !n_poses
-        return
-    endif
+    % convenient variable
+    DAMPING_MATRIX = eye(SYSTEM_SIZE)*damping;
 
-    % build initial state
-    pose0 = poses_ig(1);
-    curr_pose_id = pose0.id;
-    state = buildState(pose0, landmarks_ig);
-    state_dim = length(state);
+    for i=1:num_iterations
+        % reset H and b (dampening H)
+        H = DAMPING_MATRIX;
+        b = zeros(SYSTEM_SIZE, 1);
+        for j=1:size(Z, 2)
+            % retrieve measurement information
+            pose_index = associations(1, j);
+            land_index = associations(2, j);
+            z = Z(:, j);
 
-    % array of relevant landmarks' ids
-    land_ids = unique([landmarks_ig.id]);
+            % relevant pose and landmark
+            Xr = XR_ls(:, :, pose_index);
+            Xl = XL_ls(:, land_index);
 
-    for i=2:n_poses
+            % compute error and jacobian(s)
+            [e, Jr, Jl] = errorAndJacobian(Xr, Xl, z);
 
-        % update state
-        curr_pose = poses_ig(i);
-        curr_pose_id = curr_pose.id;
-        state(1:3) = [curr_pose.x; curr_pose.y; curr_pose.theta];
+            % check if outlier
+            chi = e.'*e;
+            if chi > kernel_threshold
+                e *= sqrt(kernel_threshold/chi);
+                chi = kernel_threshold;
+            else
+                num_inliers(i)++;
+            endif
+            chi_stats(i) += chi;
 
-        % gather observations in current state
-        curr_pose_obs = searchObservationsById(observations, curr_pose_id);
+            % Update H and b
+            Hrl = Jr.'*Jl;
 
-        for iter=1:n_iterations
-            % reset H and b
-            H = zeros(state_dim, state_dim);
-            b = zeros(state_dim, 1);
-            for k=1:length(curr_pose_obs)
-                % Is the observation regarding a relevant landmarks?
-                if any(land_ids == curr_pose_obs(k).id)
-                    [e, J] = errorAndJacobian(state, curr_pose_obs(k));
-                    chi = e.'*e;
-                    if chi > kernel_threshold
-                        e *= sqrt(kernel_threshold/chi);
-                        chi = kernel_threshold;
-                    else
-                        num_inliers(iter)++;
-                    endif
-                    chi_stats(iter) += chi;
-                    H += J.'*J;
-                    b += J.'*e;
-                endif
-            endfor
+            pose_matrix_index = poseMatrixIndex(pose_index);
+            land_matrix_index = landMatrixIndex(land_index);
 
-            % apply damping
-            H += eye(state_dim)*damping;
+            H(pose_matrix_index:pose_matrix_index+POSE_DIM-1,
+              pose_matrix_index:pose_matrix_index+POSE_DIM-1) += Jr.'*Jr;
 
-            % update estimate of the current pose
-            state -= H\b;
+            H(pose_matrix_index:pose_matrix_index+POSE_DIM-1,
+              land_matrix_index:land_matrix_index+LAND_DIM-1) += Hrl;
 
-            % normalize pose angle
-            %theta = state(3);
-            %state(3) = atan2(sin(theta), cos(theta));
+            H(land_matrix_index:land_matrix_index+LAND_DIM-1,
+              pose_matrix_index:pose_matrix_index+POSE_DIM-1) += Hrl.';
+
+            H(land_matrix_index:land_matrix_index+LAND_DIM-1,
+              land_matrix_index:land_matrix_index+LAND_DIM-1) += Jl.'*Jl;
+
+            b(pose_matrix_index:pose_matrix_index+POSE_DIM-1) += Jr.'*e;
+            b(land_matrix_index:land_matrix_index+LAND_DIM-1) += Jl.'*e;
+
         endfor
 
-        % append pose after LS optimization to output
-        poses_ls(end+1) = pose(
-            curr_pose_id,
-            state(1),
-            state(2),
-            state(3)
-        );
+        % consider first pose as fixed
+        dx = zeros(SYSTEM_SIZE, 1);
+        dx(POSE_DIM+1:end) = -(H(POSE_DIM+1:end, POSE_DIM+1:end)\b(POSE_DIM+1:end, 1));
+
+        % update state
+        [XR_ls, XL_ls] = boxPlus(XR_ls, XL_ls, dx);
+    endfor
+endfunction
+
+function [e, Jr, Jl] = errorAndJacobian(Xr, Xl, z)
+
+    global POSE_DIM;
+    global LAND_DIM;
+
+    % compute error
+    sub = [Xr(1, 3) - Xl(1), Xr(2, 3) - Xl(2)];
+    z_hat = norm(sub);
+    e = z_hat - z;
+
+    % compute jacobians
+    Jr = zeros(length(z), POSE_DIM);
+    Jl = zeros(length(z), LAND_DIM);
+    Jr(1:2) = sub/z_hat;
+    Jl(1:2) = -sub/z_hat;
+
+endfunction
+
+function [XR, XL] = boxPlus(XR, XL, dx)
+
+    global POSE_DIM;
+    global LAND_DIM;
+    global POSE_NUM;
+    global LAND_NUM;
+
+    for i=1:POSE_NUM
+        pose_matrix_index = poseMatrixIndex(i);
+        dxr = dx(pose_matrix_index:pose_matrix_index+POSE_DIM-1);
+        XR(:, :, i) = v2t(dxr)*XR(:, :, i);
     endfor
 
-    % for in state - fill landmarks_ls
-    for i=1:length(land_ids)
-        land_id = land_ids(i);
-        land_x = state(4+2*land_id-2);
-        land_y = state(4+2*land_id-1);
-        landmarks_ls(end+1) = landmark(land_id, [land_x, land_y]);
+    for i=1:LAND_NUM
+        land_matrix_index = landMatrixIndex(i);
+        XL(:, i) += dx(land_matrix_index:land_matrix_index+LAND_DIM-1, :);
     endfor
 
-    % remove first, empty field of struct
-    poses_ls(1) = [];
-    landmarks_ls(1) = [];
+endfunction
 
+function A=v2t(v)
+    c = cos(v(3));
+    s = sin(v(3));
+    A = [c, -s, v(1);
+         s,  c, v(2);
+         0,  0,   1];
 end
 
-function [e, J] = errorAndJacobian(state, obs)
-    % find landmark
-    curr_land_id = obs.id;
-    curr_land_idx_x = (4+2*curr_land_id-2);
-    curr_land_idx_y = (4+2*curr_land_id-1);
-    curr_land_pose = [
-        state(curr_land_idx_x);
-        state(curr_land_idx_y)
-    ];
+function pose_matrix_index = poseMatrixIndex(pose_index)
 
-    % compute error and build e
-    z_hat = measurement_function(state(1:2), curr_land_pose);
-    e = z_hat - obs.range;
+    global POSE_NUM;
 
-    % compute jacobian
-    J = zeros(length(e), length(state));
-    J(1:2) = [(state(1)-curr_land_pose(1))/z_hat (state(2)-curr_land_pose(2))/z_hat];
-    J(curr_land_idx_x) = (curr_land_pose(1)-state(1))/z_hat;
-    J(curr_land_idx_y) = (curr_land_pose(2)-state(2))/z_hat;
-end
-
-function new_state = transition_function(state, transition)
-    % Gather pose and transition data
-    curr_theta = state(3);
-    v = transition.v(1);
-    w = transition.v(3);
-
-    % landmarks stay fixed
-    new_state = state;
-
-    % Compute new state
-    new_state(1:3) += [
-        v*cos(curr_theta);
-        v*sin(curr_theta);
-        w
-    ];
-end
-
-function z_hat = measurement_function(curr_pose, land_pose)
-    z_hat = norm([curr_pose(1:2)-land_pose]);
-end
-
-function out = searchObservationsById(observations, pose_id)
-    index = find([observations.pose_id] == pose_id);
-    if (index)
-        out = observations(index).observation;
+    if pose_index > POSE_NUM
+        pose_matrix_index = -1;
     else
-        out = [];
-    end
-end
+        global POSE_DIM;
+        pose_matrix_index = 1 + (pose_index-1)*POSE_DIM;
+    endif
 
-function [state] = buildState(pose0, landmarks)
-    state = [pose0.x; pose0.y; pose0.theta];
+endfunction
 
-    for i=1:length(landmarks)
-        curr_land_id = landmarks(i).id;
-        state(4+2*curr_land_id-2) = landmarks(i).x_pose;
-        state(4+2*curr_land_id-1) = landmarks(i).y_pose;
-    endfor
-end
+function land_matrix_index = landMatrixIndex(land_index)
+
+    global LAND_NUM;
+
+    if land_index > LAND_NUM
+        land_matrix_index = -1;
+    else
+        global POSE_DIM;
+        global LAND_DIM;
+        global POSE_NUM;
+        land_matrix_index = 1 + POSE_NUM*POSE_DIM + (land_index-1)*LAND_DIM;
+    endif
+
+endfunction
