@@ -1,40 +1,67 @@
-function [poses_ls, landmarks_ls] = slamLS(landmarks, pose0, transitions, observations, N_ITERATIONS)
+function [poses_ls, landmarks_ls, chi_stats, num_inliers] = slamLS(landmarks_ig,
+                poses_ig, observations, n_iterations, damping, kernel_threshold)
 
-    % initialize poses struct
+    % initialize outputs
     poses_ls = struct();
+    landmarks_ls = struct();
+    chi_stats = zeros(1, n_iterations);
+    num_inliers = zeros(1, n_iterations);
 
-    % build state
-    state = buildState(pose0, landmarks);
-    state_dim = length(state);
+    % no poses provided
+    n_poses = length(poses_ig);
+    if !n_poses
+        return
+    endif
+
+    % build initial state
+    pose0 = poses_ig(1);
     curr_pose_id = pose0.id;
+    state = buildState(pose0, landmarks_ig);
+    state_dim = length(state);
 
     % array of relevant landmarks' ids
-    land_ids = unique([landmarks.id]);
+    land_ids = unique([landmarks_ig.id]);
 
-    for i=1:length(transitions)
+    for i=2:n_poses
 
-        % transition to next state (first state have no observations)
-        state = transition_function(state, transitions(i));
-        ++curr_pose_id;
+        % update state
+        curr_pose = poses_ig(i);
+        curr_pose_id = curr_pose.id;
+        state(1:3) = [curr_pose.x; curr_pose.y; curr_pose.theta];
 
         % gather observations in current state
-        curr_obs = searchObservationsById(observations, curr_pose_id);
+        curr_pose_obs = searchObservationsById(observations, curr_pose_id);
 
-        for j=1:N_ITERATIONS
+        for iter=1:n_iterations
             % reset H and b
             H = zeros(state_dim, state_dim);
             b = zeros(state_dim, 1);
-            for k=1:length(curr_obs)
+            for k=1:length(curr_pose_obs)
                 % Is the observation regarding a relevant landmarks?
-                if any(land_ids == curr_obs(k).id)
-                    [e, J] = errorAndJacobian(state, curr_obs(k));
+                if any(land_ids == curr_pose_obs(k).id)
+                    [e, J] = errorAndJacobian(state, curr_pose_obs(k));
+                    chi = e.'*e;
+                    if chi > kernel_threshold
+                        e *= sqrt(kernel_threshold/chi);
+                        chi = kernel_threshold;
+                    else
+                        num_inliers(iter)++;
+                    endif
+                    chi_stats(iter) += chi;
                     H += J.'*J;
                     b += J.'*e;
                 endif
             endfor
 
+            % apply damping
+            H += eye(state_dim)*damping;
+
             % update estimate of the current pose
             state -= H\b;
+
+            % normalize pose angle
+            %theta = state(3);
+            %state(3) = atan2(sin(theta), cos(theta));
         endfor
 
         % append pose after LS optimization to output
@@ -46,8 +73,7 @@ function [poses_ls, landmarks_ls] = slamLS(landmarks, pose0, transitions, observ
         );
     endfor
 
-    landmarks_ls = struct();
-    % for in state - build landmarks_ls
+    % for in state - fill landmarks_ls
     for i=1:length(land_ids)
         land_id = land_ids(i);
         land_x = state(4+2*land_id-2);
@@ -55,7 +81,7 @@ function [poses_ls, landmarks_ls] = slamLS(landmarks, pose0, transitions, observ
         landmarks_ls(end+1) = landmark(land_id, [land_x, land_y]);
     endfor
 
-    % remove first, empty and meaningless, cell of struct
+    % remove first, empty field of struct
     poses_ls(1) = [];
     landmarks_ls(1) = [];
 
