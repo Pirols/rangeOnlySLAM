@@ -67,12 +67,8 @@ function [XR_ls, XL_ls, chi_stats, num_inliers] = slamLS(XR_ig, XL_ig, Z,
 
         endfor
 
-        % consider first pose as fixed
-        dx = zeros(SYSTEM_SIZE, 1);
-        dx(POSE_DIM+1:end) = -(H(POSE_DIM+1:end, POSE_DIM+1:end)\b(POSE_DIM+1:end, 1));
-
-        % update state
-        [XR_ls, XL_ls] = boxPlus(XR_ls, XL_ls, dx);
+        % compute correction and update state
+        [XR_ls, XL_ls] = boxPlus(XR_ls, XL_ls, -H\b);
     endfor
 endfunction
 
