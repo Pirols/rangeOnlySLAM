@@ -43,7 +43,7 @@ for i=1:POSE_NUM
     XR_ig(1, 2, i) = -s;
     XR_ig(1, 3, i) = poses_ig(i).x;
     XR_ig(2, 1, i) = s;
-    XR_ig(2, 2, i) = -c;
+    XR_ig(2, 2, i) = c;
     XR_ig(2, 3, i) = poses_ig(i).y;
     XR_ig(3, 3, i) = 1;
 
@@ -55,7 +55,7 @@ for i=1:POSE_NUM
     XR_gt(1, 2, i) = -s;
     XR_gt(1, 3, i) = poses_gt(i).x;
     XR_gt(2, 1, i) = s;
-    XR_gt(2, 2, i) = -c;
+    XR_gt(2, 2, i) = c;
     XR_gt(2, 3, i) = poses_gt(i).y;
     XR_gt(3, 3, i) = 1;
 endfor

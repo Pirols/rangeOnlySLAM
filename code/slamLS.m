@@ -110,13 +110,13 @@ function [XR, XL] = boxPlus(XR, XL, dx)
 
 endfunction
 
-function A=v2t(v)
+function A = v2t(v)
     c = cos(v(3));
     s = sin(v(3));
     A = [c, -s, v(1);
          s,  c, v(2);
          0,  0,   1];
-end
+endfunction
 
 function pose_matrix_index = poseMatrixIndex(pose_index)
 
