@@ -28,7 +28,7 @@ function [XR_ls, XL_ls, chi_stats, num_inliers] = slamLS(XR_ig, XL_ig, Z,
             z = Z(:, j);
 
             % relevant pose and landmark
-            Xr = XR_ls(:, :, pose_index);
+            Xr = XR_ls(:, pose_index);
             Xl = XL_ls(:, land_index);
 
             % compute error and jacobian(s)
@@ -64,7 +64,6 @@ function [XR_ls, XL_ls, chi_stats, num_inliers] = slamLS(XR_ig, XL_ig, Z,
 
             b(pose_matrix_index:pose_matrix_index+POSE_DIM-1) += Jr.'*e;
             b(land_matrix_index:land_matrix_index+LAND_DIM-1) += Jl.'*e;
-
         endfor
 
         % compute correction and update state
@@ -73,12 +72,11 @@ function [XR_ls, XL_ls, chi_stats, num_inliers] = slamLS(XR_ig, XL_ig, Z,
 endfunction
 
 function [e, Jr, Jl] = errorAndJacobian(Xr, Xl, z)
-
     global POSE_DIM;
     global LAND_DIM;
 
     % compute error
-    sub = [Xr(1, 3) - Xl(1), Xr(2, 3) - Xl(2)];
+    sub = [Xr(1) - Xl(1), Xr(2) - Xl(2)];
     z_hat = norm(sub);
     e = z_hat - z;
 
@@ -87,11 +85,9 @@ function [e, Jr, Jl] = errorAndJacobian(Xr, Xl, z)
     Jl = zeros(length(z), LAND_DIM);
     Jr(1:2) = sub/z_hat;
     Jl(1:2) = -sub/z_hat;
-
 endfunction
 
 function [XR, XL] = boxPlus(XR, XL, dx)
-
     global POSE_DIM;
     global LAND_DIM;
     global POSE_NUM;
@@ -99,27 +95,16 @@ function [XR, XL] = boxPlus(XR, XL, dx)
 
     for i=1:POSE_NUM
         pose_matrix_index = poseMatrixIndex(i);
-        dxr = dx(pose_matrix_index:pose_matrix_index+POSE_DIM-1);
-        XR(:, :, i) = v2t(dxr)*XR(:, :, i);
+        XR(:, i) += dx(pose_matrix_index:pose_matrix_index+POSE_DIM-1);
     endfor
 
     for i=1:LAND_NUM
         land_matrix_index = landMatrixIndex(i);
-        XL(:, i) += dx(land_matrix_index:land_matrix_index+LAND_DIM-1, :);
+        XL(:, i) += dx(land_matrix_index:land_matrix_index+LAND_DIM-1);
     endfor
-
-endfunction
-
-function A = v2t(v)
-    c = cos(v(3));
-    s = sin(v(3));
-    A = [c, -s, v(1);
-         s,  c, v(2);
-         0,  0,   1];
 endfunction
 
 function pose_matrix_index = poseMatrixIndex(pose_index)
-
     global POSE_NUM;
 
     if pose_index > POSE_NUM
@@ -128,11 +113,9 @@ function pose_matrix_index = poseMatrixIndex(pose_index)
         global POSE_DIM;
         pose_matrix_index = 1 + (pose_index-1)*POSE_DIM;
     endif
-
 endfunction
 
 function land_matrix_index = landMatrixIndex(land_index)
-
     global LAND_NUM;
 
     if land_index > LAND_NUM
@@ -143,5 +126,4 @@ function land_matrix_index = landMatrixIndex(land_index)
         global POSE_NUM;
         land_matrix_index = 1 + POSE_NUM*POSE_DIM + (land_index-1)*LAND_DIM;
     endif
-
 endfunction

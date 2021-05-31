@@ -45,13 +45,12 @@ function [landmarks] = initLandmarks(poses, observations)
 
     % remove first empty and meaningless field of the struct
     landmarks(1) = [];
-
-end
+endfunction
 
 function out = landinfo(landmark_id, range_obs, x, y)
     out.landmark_id = landmark_id;
     out.observations = [x, y, range_obs];
-end
+endfunction
 
 function [x, y] = trilaterateLandmark(observations)
 
@@ -110,5 +109,4 @@ function [x, y] = trilaterateLandmark(observations)
     if abs(residue) > mean(observations(:, 3))
         x = y = inf;
     endif
-
-end
+endfunction

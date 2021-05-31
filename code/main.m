@@ -3,9 +3,9 @@ clear
 clc
 
 addpath 'g2o_wrapper'
-source 'mse.m'
 
 %%% load datasets
+disp("----- Loading datasets and initializing landmarks...")
 %% initial guess
 [~, poses_ig, ~, observations] = loadG2o('../datasets/slam2d_range_only_initial_guess.g2o');
 % remove first, empty field of structs
@@ -27,40 +27,25 @@ global POSE_NUM = length(poses_ig);
 global LAND_NUM = length(landmarks_ig);
 
 %%% build XR, XL, Z and associations to perform ICP
+disp("----- Parsing loaded data...");
 % Initialize XR and XL
-XR_ig = zeros(3, 3, POSE_NUM);
-XR_gt = zeros(3, 3, POSE_NUM);
+XR_ig = zeros(POSE_DIM, POSE_NUM);
+XR_gt = zeros(POSE_DIM, POSE_NUM);
 XL_ig = zeros(LAND_DIM, LAND_NUM);
 XL_gt = zeros(LAND_DIM, LAND_NUM);
 
 % XR
+disp("---------- XR");
 for i=1:POSE_NUM
     %%% initial guess
-    theta = poses_ig(i).theta;
-    c = cos(theta);
-    s = sin(theta);
-    XR_ig(1, 1, i) = c;
-    XR_ig(1, 2, i) = -s;
-    XR_ig(1, 3, i) = poses_ig(i).x;
-    XR_ig(2, 1, i) = s;
-    XR_ig(2, 2, i) = c;
-    XR_ig(2, 3, i) = poses_ig(i).y;
-    XR_ig(3, 3, i) = 1;
+    XR_ig(:, i) = [poses_ig(i).x; poses_ig(i).y; poses_ig(i).theta];
 
     %%% ground truth
-    theta = poses_gt(i).theta;
-    c = cos(theta);
-    s = sin(theta);
-    XR_gt(1, 1, i) = c;
-    XR_gt(1, 2, i) = -s;
-    XR_gt(1, 3, i) = poses_gt(i).x;
-    XR_gt(2, 1, i) = s;
-    XR_gt(2, 2, i) = c;
-    XR_gt(2, 3, i) = poses_gt(i).y;
-    XR_gt(3, 3, i) = 1;
+    XR_gt(:, i) = [poses_gt(i).x; poses_gt(i).y; poses_gt(i).theta];
 endfor
 
 % XL
+disp("---------- XL");
 for i=1:LAND_NUM
     XL_ig(1:2, i) = [landmarks_ig(i).x_pose; landmarks_ig(i).y_pose];
     land_id = landmarks_ig(i).id;
@@ -73,8 +58,13 @@ for i=1:LAND_NUM
 endfor
 
 % Z and associations
+disp("---------- Z and associations");
 Z = [];
 associations = [];
+
+% check if there is noise in the observations
+mean_err_obs = 0;
+
 for i=1:length(observations)
     pose_num = find([poses_ig.id] == observations(i).pose_id);
     for j=1:length(observations(i).observation)
@@ -85,10 +75,21 @@ for i=1:length(observations)
         endif
         Z(:, end+1) = observations(i).observation(j).range;
         associations(:, end+1) = [pose_num; land_num];
+
+        % add current observation's noise
+        land = searchById(landmarks_gt, observations(i).observation(j).id);
+        pose = searchById(poses_gt, observations(i).pose_id);
+        val = norm([pose.x - land.x_pose; pose.y - land.y_pose]);
+        mean_err_obs += abs(Z(:, end) - val);
     endfor
 endfor
 
+% get mean observations' noise
+mean_err_obs /= size(Z, 2);
+printf("--------------- Mean error in the observations is %f\n", mean_err_obs);
+
 %%% least squares optimization
+disp("----- Starting LS optimization...");
 % LS parameters
 LS_ITERATIONS = 100;
 DAMPING = 0.01;
@@ -105,19 +106,8 @@ KERNEL_THRESHOLD = 1.0;
     KERNEL_THRESHOLD
 );
 
-%%% Evaluation
-% Map
-mse_lands_ig = mse_land(XL_ig, landmarks_ig, landmarks_gt);
-mse_lands_ls = mse_land(XL_ls, landmarks_ig, landmarks_gt);
-printf("MSE over landmarks went from %d to %d (after LS optimization)\n",
-        mse_lands_ig, mse_lands_ls);
-% Trajectory (only XY)
-mse_poses_xy_ig = mse_pose(XR_ig, poses_ig, poses_gt);
-mse_poses_xy_ls = mse_pose(XR_ls, poses_ig, poses_gt);
-printf("MSE over poses (only XY) went from %d to %d (after LS optimization)\n",
-        mse_poses_xy_ig, mse_poses_xy_ls);
-
 %%% Plot results
+disp("----- Plotting results...");
 % Map
 figure();
 title("Map");
@@ -131,12 +121,9 @@ legend("Initial guess", "Optimized", "Ground truth");
 figure();
 title("Trajectory");
 hold on;
-plot(reshape(XR_ig(1, 3, :), 1, POSE_NUM), reshape(XR_ig(2, 3, :), 1, POSE_NUM),
-     'r-', 'linewidth', 3);
-plot(reshape(XR_ls(1, 3, :), 1, POSE_NUM), reshape(XR_ls(2, 3, :), 1, POSE_NUM),
-     'b-', 'linewidth', 3);
-plot(reshape(XR_gt(1, 3, :), 1, POSE_NUM), reshape(XR_gt(2, 3, :), 1, POSE_NUM),
-     'g-', 'linewidth', 3);
+plot(XR_ig(1, :), XR_ig(2, :), 'r-', 'linewidth', 3);
+plot(XR_ls(1, :), XR_ls(2, :), 'b-', 'linewidth', 3);
+plot(XR_gt(1, :), XR_gt(2, :), 'g-', 'linewidth', 3);
 legend("Initial guess", "Optimized", "Ground truth");
 
 % Chi evolution
