@@ -7,17 +7,18 @@ addpath 'g2o_wrapper'
 %%% load datasets
 disp("----- Loading datasets and initializing landmarks...")
 %% initial guess
-[~, poses_ig, ~, observations] = loadG2o('../datasets/slam2d_range_only_initial_guess.g2o');
+[~, poses_ig, transitions, observations] = loadG2o('../datasets/slam2d_range_only_initial_guess.g2o');
 % remove first, empty field of structs
-poses_ig(1) = [];
+poses_ig(1)     = [];
 observations(1) = [];
+transitions(1)  = [];
 % trilaterate landmarks
 landmarks_ig = initLandmarks(poses_ig, observations);
 %% ground truth
 [landmarks_gt, poses_gt, ~, ~] = loadG2o('../datasets/slam2d_range_only_ground_truth.g2o');
 % remove first, empty field of structs
 landmarks_gt(1) = [];
-poses_gt(1) = [];
+poses_gt(1)     = [];
 
 %%% parameters
 % cardinalities
@@ -57,6 +58,15 @@ for i=1:LAND_NUM
     XL_gt(1:2, i) = [land_gt.x_pose; land_gt.y_pose];
 endfor
 
+% odometry
+disp("---------- Odometry")
+odometry = [];
+
+for i=1:length(transitions)
+    odom = transitions(i);
+    odometry(:, end+1) = [odom.v(1); odom.v(3)];
+endfor
+
 % Z and associations
 disp("---------- Z and associations");
 Z = [];
@@ -67,6 +77,9 @@ mean_err_obs = 0;
 
 for i=1:length(observations)
     pose_num = find([poses_ig.id] == observations(i).pose_id);
+    % If there is a transition for every state this value is always going to be
+    % pose_num - 1
+    odom_num = find([transitions.id_to] == observations(i).pose_id);
     for j=1:length(observations(i).observation)
         land_num = find([landmarks_ig.id] == observations(i).observation(j).id);
         if !length(land_num)
@@ -74,13 +87,15 @@ for i=1:length(observations)
             continue
         endif
         Z(:, end+1) = observations(i).observation(j).range;
-        associations(:, end+1) = [pose_num; land_num];
+        associations(:, end+1) = [pose_num; land_num; odom_num];
 
         % add current observation's noise
         land = searchById(landmarks_gt, observations(i).observation(j).id);
         pose = searchById(poses_gt, observations(i).pose_id);
-        val = norm([pose.x - land.x_pose; pose.y - land.y_pose]);
-        mean_err_obs += abs(Z(:, end) - val);
+        mean_err_obs += abs(Z(:, end) - norm([
+            pose.x - land.x_pose;
+            pose.y - land.y_pose
+        ]));
     endfor
 endfor
 
@@ -91,8 +106,8 @@ printf("--------------- Mean error in the observations is %f\n", mean_err_obs);
 %%% least squares optimization
 disp("----- Starting LS optimization...");
 % LS parameters
-LS_ITERATIONS = 100;
-DAMPING = 0.01;
+LS_ITERATIONS    = 100;
+DAMPING          = 0.01;
 KERNEL_THRESHOLD = 1.0;
 
 % LS
@@ -101,6 +116,7 @@ KERNEL_THRESHOLD = 1.0;
     XL_ig,
     Z,
     associations,
+    odometry,
     LS_ITERATIONS,
     DAMPING,
     KERNEL_THRESHOLD
@@ -108,7 +124,9 @@ KERNEL_THRESHOLD = 1.0;
 
 %%% Plot results
 disp("----- Plotting results...");
+
 % Map
+disp("---------- Map");
 figure();
 title("Map");
 hold on;
@@ -117,16 +135,28 @@ plot(XL_ls(1, :), XL_ls(2, :), 'bx', "linewidth", 2);
 plot(XL_gt(1, :), XL_gt(2, :), 'go', "linewidth", 2);
 legend("Initial guess", "Optimized", "Ground truth");
 
-% Trajectory
+% Trajectory (XY)
+disp("---------- Trajectory (XY)");
 figure();
-title("Trajectory");
+title("Trajectory (XY)");
 hold on;
 plot(XR_ig(1, :), XR_ig(2, :), 'r-', 'linewidth', 3);
 plot(XR_ls(1, :), XR_ls(2, :), 'b-', 'linewidth', 3);
 plot(XR_gt(1, :), XR_gt(2, :), 'g-', 'linewidth', 3);
 legend("Initial guess", "Optimized", "Ground truth");
 
+% Trajectory (theta)
+disp("---------- Trajectory (theta)");
+figure();
+title("Trajectory (theta)");
+hold on;
+plot(XR_ig(3, :), 'r-', 'linewidth', 3);
+plot(XR_ls(3, :), 'b-', 'linewidth', 3);
+plot(XR_gt(3, :), 'g-', 'linewidth', 3);
+legend("Initial guess", "Optimized", "Ground truth");
+
 % Chi evolution
+disp("---------- Chi evolution");
 figure();
 title("Chi evolution");
 hold on;
