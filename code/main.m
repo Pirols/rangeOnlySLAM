@@ -58,50 +58,50 @@ for i=1:LAND_NUM
     XL_gt(1:2, i) = [land_gt.x_pose; land_gt.y_pose];
 endfor
 
-% odometry
-disp("---------- Odometry")
-odometry = [];
+% Zl and land_associations
+disp("---------- Zl and land_associations");
+Zl = [];
+land_associations = [];
 
-for i=1:length(transitions)
-    odom = transitions(i);
-    odometry(:, end+1) = [odom.v(1); odom.v(3)];
-endfor
-
-% Z and associations
-disp("---------- Z and associations");
-Z = [];
-associations = [];
-
-% check if there is noise in the observations
-mean_err_obs = 0;
+% needed to check the noise in the observations
+land_obs_mean_err = 0;
 
 for i=1:length(observations)
     pose_num = find([poses_ig.id] == observations(i).pose_id);
-    % If there is a transition for every state this value is always going to be
-    % pose_num - 1
-    odom_num = find([transitions.id_to] == observations(i).pose_id);
     for j=1:length(observations(i).observation)
         land_num = find([landmarks_ig.id] == observations(i).observation(j).id);
         if !length(land_num)
             % observation not relative to a relevant landmark
             continue
         endif
-        Z(:, end+1) = observations(i).observation(j).range;
-        associations(:, end+1) = [pose_num; land_num; odom_num];
+        Zl(:, end+1) = observations(i).observation(j).range;
+        land_associations(:, end+1) = [pose_num; land_num];
 
         % add current observation's noise
-        land = searchById(landmarks_gt, observations(i).observation(j).id);
-        pose = searchById(poses_gt, observations(i).pose_id);
-        mean_err_obs += abs(Z(:, end) - norm([
-            pose.x - land.x_pose;
-            pose.y - land.y_pose
+        land_gt = searchById(landmarks_gt, observations(i).observation(j).id);
+        pose_gt = searchById(poses_gt, observations(i).pose_id);
+        land_obs_mean_err += abs(Zl(:, end) - norm([
+            pose_gt.x - land_gt.x_pose;
+            pose_gt.y - land_gt.y_pose
         ]));
     endfor
 endfor
-
 % get mean observations' noise
-mean_err_obs /= size(Z, 2);
-printf("--------------- Mean error in the observations is %f\n", mean_err_obs);
+land_obs_mean_err /= size(Zl, 2);
+printf("--------------- Mean error in the range measurements is %f\n", land_obs_mean_err);
+
+% Zl and land_associations
+disp("---------- Zr and pose_associations");
+Zr = [];
+pose_associations = [];
+
+for i=1:length(transitions)
+    pose_num_i = find([poses_ig.id] == transitions(i).id_from);
+    pose_num_j = find([poses_ig.id] == transitions(i).id_to);
+
+    pose_associations(:, end+1) = [pose_num_i; pose_num_j];
+    Zr(:, end+1) = [transitions(i).v(1); transitions(i).v(3)];
+endfor
 
 %%% least squares optimization
 disp("----- Starting LS optimization...");
@@ -111,12 +111,11 @@ DAMPING          = 0.01;
 KERNEL_THRESHOLD = 1.0;
 
 % LS
-[XR_ls, XL_ls, chi_stats, num_inliers] = slamLS(
+[XR_ls, XL_ls, chi_stats_l, num_inliers_l, chi_stats_r, num_inliers_r] = slamLS(
     XR_ig,
     XL_ig,
-    Z,
-    associations,
-    odometry,
+    Zl, land_associations,
+    Zr, pose_associations,
     LS_ITERATIONS,
     DAMPING,
     KERNEL_THRESHOLD
@@ -145,19 +144,27 @@ plot(XR_ls(1, :), XR_ls(2, :), 'b-', 'linewidth', 3);
 plot(XR_gt(1, :), XR_gt(2, :), 'g-', 'linewidth', 3);
 legend("Initial guess", "Optimized", "Ground truth");
 
-% Trajectory (theta)
-disp("---------- Trajectory (theta)");
-figure();
-title("Trajectory (theta)");
-hold on;
-plot(XR_ig(3, :), 'r-', 'linewidth', 3);
-plot(XR_ls(3, :), 'b-', 'linewidth', 3);
-plot(XR_gt(3, :), 'g-', 'linewidth', 3);
-legend("Initial guess", "Optimized", "Ground truth");
+% % Uncomment paragraph for theta plot
+% % Trajectory (theta)
+% disp("---------- Trajectory (theta)");
+% figure();
+% title("Trajectory (theta)");
+% hold on;
+% plot(XR_ig(3, :), 'r-', 'linewidth', 3);
+% plot(XR_ls(3, :), 'b-', 'linewidth', 3);
+% plot(XR_gt(3, :), 'g-', 'linewidth', 3);
+% legend("Initial guess", "Optimized", "Ground truth");
 
-% Chi evolution
-disp("---------- Chi evolution");
+% Chi evolution (measurements)
+disp("---------- Chi evolution (measurements)");
 figure();
-title("Chi evolution");
+title("Chi evolution (measurements)");
 hold on;
-plot(chi_stats, 'b-', 'linewidth', 2)
+plot(chi_stats_l, 'b-', 'linewidth', 2)
+
+% Chi evolution (odometry)
+disp("---------- Chi evolution (odometry)");
+figure();
+title("Chi evolution (odometry)");
+hold on;
+plot(chi_stats_r, 'b-', 'linewidth', 2)
